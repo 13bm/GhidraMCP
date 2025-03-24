@@ -337,13 +337,13 @@ if __name__ == "__main__":
     print("Starting Ghidra MCP Bridge...", file=sys.stderr)
     
     # List all registered tools and resources for debugging
-    try:
-        resource_routes = dir(mcp._server.resources)
-        tool_names = [tool.name for tool in mcp._server.tools]
-        print(f"Registered resources: {resource_routes}", file=sys.stderr)
-        print(f"Registered tools: {tool_names}", file=sys.stderr)
-    except Exception as e:
-        print(f"Error listing resources and tools: {str(e)}", file=sys.stderr)
+    # try:
+    #     resource_routes = dir(mcp._server.resources)
+    #     tool_names = [tool.name for tool in mcp._server.tools]
+    #     print(f"Registered resources: {resource_routes}", file=sys.stderr)
+    #     print(f"Registered tools: {tool_names}", file=sys.stderr)
+    # except Exception as e:
+    #     print(f"Error listing resources and tools: {str(e)}", file=sys.stderr)
     
     # Run the server
     mcp.run()
