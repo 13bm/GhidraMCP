@@ -50,6 +50,7 @@ buildExtension {
     exclude '.editorconfig'
     exclude '*.zip'
     exclude '.gradle'
+    exclude '*.py'
 }
 
 // Add Javadoc for extension
@@ -58,4 +59,6 @@ javadoc {
 }
 
 // Make sure Javadoc is generated before building the extension
-buildExtension.dependsOn javadoc
+// buildExtension.dependsOn javadoc
+
+buildExtension
