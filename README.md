@@ -165,9 +165,6 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 4. Push to the branch: `git push origin feature/amazing-feature`
 5. Open a Pull Request
 
-## License
-
-This project is licensed under the [Apache License 2.0](LICENSE) - see the LICENSE file for details.
 
 ## Acknowledgments
 
