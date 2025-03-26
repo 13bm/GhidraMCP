@@ -13,6 +13,7 @@ GhidraMCP bridges the gap between Ghidra's powerful reverse engineering capabili
 - **Deep Code Insights**: Retrieve detailed function information and decompiled code
 - **Binary Structure Analysis**: Explore imports, exports, and memory layouts
 - **Automated Security Analysis**: Get AI-assisted insights about potential security vulnerabilities
+- **Socket-Based Architecture**: High-performance communication between Ghidra and AI assistants
 - **Cross-Platform Compatibility**: Works on all platforms supported by Ghidra
 
 ## Installation
@@ -68,11 +69,6 @@ To connect Claude to the GhidraMCP plugin:
    }
    ```
 
-3. Start the bridge script:
-   ```bash
-   python ./ghidra_server.py
-   ```
-
 The bridge script creates a connection between Ghidra and Claude, enabling real-time binary analysis through natural language.
 
 ### Available Tools
@@ -87,6 +83,13 @@ The plugin exposes several powerful functions through the MCP interface:
 | `get_exports()` | List all exported functions in the binary |
 | `get_memory_map()` | Get the memory layout of the binary |
 | `connect_to_ghidra(host, port)` | Connect to a specific Ghidra instance |
+| `rename_function(current_name, new_name)` | Rename a function by its current name |
+| `rename_data(address, new_name)` | Rename a data label at a specific address |
+| `extract_api_call_sequences(address)` | Extract API calls from a function for security analysis |
+| `identify_user_input_sources()` | Find potential sources of user input in the binary |
+| `generate_call_graph(address, max_depth=3)` | Generate a hierarchical representation of function calls |
+| `identify_crypto_patterns()` | Detect cryptographic implementations in the binary |
+| `find_obfuscated_strings()` | Locate potentially obfuscated strings |
 
 ### Example Queries
 
@@ -99,8 +102,30 @@ Here are examples of questions you can ask through an MCP-compatible AI client:
 - "How does the authentication mechanism in this program work?"
 - "Are there any potential buffer overflow vulnerabilities in this code?"
 - "What network connections does this binary establish?"
+- "Can you rename this function to something more descriptive?"
+- "Show me all potential user input sources that could be exploited."
+- "Generate a call graph for the main function."
 
 ## Advanced Usage
+
+### Security Analysis Capabilities
+
+GhidraMCP provides specialized tools for security-focused analysis:
+
+#### API Call Sequence Analysis
+Extract and categorize external API calls from a function for security analysis. This helps identify potentially dangerous functions and understand their interactions.
+
+#### User Input Sources
+Identify entry points where external data enters the program, crucial for vulnerability assessment and understanding attack surfaces.
+
+#### Call Graph Generation
+Create structured call graphs to understand execution flow, track data propagation, and identify potential attack paths.
+
+#### Cryptographic Pattern Detection
+Identify cryptographic implementations including standard algorithms (AES, RSA, etc.) and custom implementations based on code patterns.
+
+#### Obfuscated String Detection
+Find strings that may be obfuscated through techniques like XOR encoding or character-by-character construction.
 
 ### Custom Configurations
 
@@ -117,6 +142,7 @@ GhidraMCP can be integrated into your existing analysis workflows:
 1. Use Ghidra's standard analysis features to identify areas of interest
 2. Leverage AI assistance through GhidraMCP for deeper understanding
 3. Combine the AI insights with your manual analysis
+4. Rename functions and data based on AI insights for better readability
 
 ## Building from Source
 
@@ -148,6 +174,7 @@ To build the plugin from source:
 - **Connection Issues**: Make sure the Ghidra instance is running and the plugin is enabled
 - **Port Conflicts**: If port 8765 is already in use, modify the port in the plugin configuration
 - **Bridge Script Errors**: Check if all required Python packages are installed with `pip install FastMCP`
+- **Null Results for Analysis Functions**: Some security analysis functions may return null results if the binary doesn't contain relevant patterns
 
 ### Logs
 
