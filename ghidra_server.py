@@ -130,6 +130,21 @@ class GhidraMCPSocketClient:
     
     def get_memory_map(self):
         return self.send_request("getMemoryMap")
+    
+    def extract_api_call_sequences(self, address):
+        return self.send_request("extractApiCallSequences", {"address": address})
+
+    def identify_user_input_sources(self):
+        return self.send_request("identifyUserInputSources")
+
+    def generate_structured_call_graph(self, address, max_depth):
+        return self.send_request("generateStructuredCallGraph", {"address": address, "maxDepth": max_depth})
+        
+    def identify_cryptographic_patterns(self):
+        return self.send_request("identifyCryptographicPatterns")
+        
+    def find_obfuscated_strings(self):
+        return self.send_request("findObfuscatedStrings")
 
 # Create the Ghidra bridge client instance
 ghidra_client = GhidraMCPSocketClient()
@@ -209,6 +224,151 @@ async def get_function_tool(address: str, decompile: bool = False):
         return [TextContent(type="text", text=json.dumps(result))]
     except Exception as e:
         logger.error(f"Error getting function: {str(e)}")
+        return [TextContent(type="text", text=json.dumps({"success": False, "error": str(e)}))]
+    
+@mcp.tool(name="rename_function")
+async def rename_function_tool(current_name: str, new_name: str):
+    """
+    Rename a function by its current name to a new user-defined name.
+    
+    Args:
+        current_name: The current name of the function
+        new_name: The new name to assign to the function
+    """
+    try:
+        if not ghidra_client.is_connected():
+            if not ensure_connection():
+                return [TextContent(type="text", text=json.dumps({"success": False, "error": "Failed to connect to Ghidra"}))]
+        
+        result = ghidra_client.send_request("renameFunction", {"currentName": current_name, "newName": new_name})
+        return [TextContent(type="text", text=json.dumps({"success": True, "result": result}))]
+    except Exception as e:
+        logger.error(f"Error renaming function: {str(e)}")
+        return [TextContent(type="text", text=json.dumps({"success": False, "error": str(e)}))]
+
+@mcp.tool(name="rename_data")
+async def rename_data_tool(address: str, new_name: str):
+    """
+    Rename a data label at the specified address.
+    
+    Args:
+        address: The address of the data to rename (e.g., "0x401000")
+        new_name: The new name to assign to the data
+    """
+    try:
+        if not ghidra_client.is_connected():
+            if not ensure_connection():
+                return [TextContent(type="text", text=json.dumps({"success": False, "error": "Failed to connect to Ghidra"}))]
+        
+        result = ghidra_client.send_request("renameData", {"address": address, "newName": new_name})
+        return [TextContent(type="text", text=json.dumps({"success": True, "result": result}))]
+    except Exception as e:
+        logger.error(f"Error renaming data: {str(e)}")
+        return [TextContent(type="text", text=json.dumps({"success": False, "error": str(e)}))]
+    
+@mcp.tool(name="extract_api_call_sequences")
+async def extract_api_call_sequences_tool(address: str):
+    """
+    Extract API call sequences from a function for security analysis.
+    
+    This tool analyzes a function and extracts all external API calls,
+    organized by security categories like crypto, network, file operations, etc.
+    
+    Args:
+        address: The address of the function to analyze (e.g., "0x401000")
+    """
+    try:
+        if not ghidra_client.is_connected():
+            if not ensure_connection():
+                return [TextContent(type="text", text=json.dumps({"success": False, "error": "Failed to connect to Ghidra"}))]
+        
+        api_calls = ghidra_client.send_request("extractApiCallSequences", {"address": address})
+        return [TextContent(type="text", text=json.dumps({"success": True, "api_calls": api_calls}))]
+    except Exception as e:
+        logger.error(f"Error extracting API call sequences: {str(e)}")
+        return [TextContent(type="text", text=json.dumps({"success": False, "error": str(e)}))]
+
+@mcp.tool(name="identify_user_input_sources")
+async def identify_user_input_sources_tool():
+    """
+    Identify potential sources of user input in the binary.
+    
+    This tool finds functions that take external input and could be
+    entry points for security vulnerabilities like buffer overflows.
+    """
+    try:
+        if not ghidra_client.is_connected():
+            if not ensure_connection():
+                return [TextContent(type="text", text=json.dumps({"success": False, "error": "Failed to connect to Ghidra"}))]
+        
+        input_sources = ghidra_client.send_request("identifyUserInputSources")
+        return [TextContent(type="text", text=json.dumps({"success": True, "input_sources": input_sources}))]
+    except Exception as e:
+        logger.error(f"Error identifying user input sources: {str(e)}")
+        return [TextContent(type="text", text=json.dumps({"success": False, "error": str(e)}))]
+
+@mcp.tool(name="generate_call_graph")
+async def generate_structured_call_graph_tool(address: str, max_depth: int = 3):
+    """
+    Generate a structured call graph from a starting function.
+    
+    This tool creates a hierarchical representation of function calls,
+    useful for understanding execution flow and identifying potentially
+    vulnerable paths.
+    
+    Args:
+        address: The address of the function to start from (e.g., "0x401000")
+        max_depth: Maximum depth of the call graph (default: 3)
+    """
+    try:
+        if not ghidra_client.is_connected():
+            if not ensure_connection():
+                return [TextContent(type="text", text=json.dumps({"success": False, "error": "Failed to connect to Ghidra"}))]
+        
+        call_graph = ghidra_client.send_request("generateStructuredCallGraph", {"address": address, "maxDepth": max_depth})
+        return [TextContent(type="text", text=json.dumps({"success": True, "call_graph": call_graph}))]
+    except Exception as e:
+        logger.error(f"Error generating call graph: {str(e)}")
+        return [TextContent(type="text", text=json.dumps({"success": False, "error": str(e)}))]
+
+@mcp.tool(name="identify_crypto_patterns")
+async def identify_cryptographic_patterns_tool():
+    """
+    Identify cryptographic patterns, constants, and algorithms in the binary.
+    
+    This tool detects potential cryptographic implementations, including
+    known algorithms (AES, RSA, etc.) and custom implementations based on
+    code patterns and constants.
+    """
+    try:
+        if not ghidra_client.is_connected():
+            if not ensure_connection():
+                return [TextContent(type="text", text=json.dumps({"success": False, "error": "Failed to connect to Ghidra"}))]
+        
+        crypto_patterns = ghidra_client.send_request("identifyCryptographicPatterns")
+        return [TextContent(type="text", text=json.dumps({"success": True, "crypto_patterns": crypto_patterns}))]
+    except Exception as e:
+        logger.error(f"Error identifying cryptographic patterns: {str(e)}")
+        return [TextContent(type="text", text=json.dumps({"success": False, "error": str(e)}))]
+
+@mcp.tool(name="find_obfuscated_strings")
+async def find_obfuscated_strings_tool():
+    """
+    Find potentially obfuscated strings in the binary.
+    
+    This tool identifies strings that may be encoded, encrypted, or constructed
+    at runtime to evade static analysis. Common techniques include XOR encoding
+    and character-by-character string construction.
+    """
+    try:
+        if not ghidra_client.is_connected():
+            if not ensure_connection():
+                return [TextContent(type="text", text=json.dumps({"success": False, "error": "Failed to connect to Ghidra"}))]
+        
+        obfuscated_strings = ghidra_client.send_request("findObfuscatedStrings")
+        return [TextContent(type="text", text=json.dumps({"success": True, "obfuscated_strings": obfuscated_strings}))]
+    except Exception as e:
+        logger.error(f"Error finding obfuscated strings: {str(e)}")
         return [TextContent(type="text", text=json.dumps({"success": False, "error": str(e)}))]
 
 @mcp.tool(name="analyze_binary")

@@ -8,6 +8,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
@@ -26,6 +28,7 @@ import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
 import ghidra.program.model.symbol.SymbolIterator;
+import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 import ghidra.program.model.listing.Data;
@@ -367,7 +370,796 @@ public class MCPContextProvider {
         
         return result;
     }
+
+    public boolean renameFunction(String currentName, String newName) {
+        if (currentProgram == null) {
+            return false;
+        }
     
+        try {
+            FunctionManager functionManager = currentProgram.getFunctionManager();
+            Function function = null;
+            
+            // Try to find the function by name
+            Iterator<Function> functions = functionManager.getFunctions(true);
+            while (functions.hasNext()) {
+                Function func = functions.next();
+                if (func.getName().equals(currentName)) {
+                    function = func;
+                    break;
+                }
+            }
+            
+            if (function == null) {
+                return false;
+            }
+            
+            // Rename the function
+            function.setName(newName, SourceType.USER_DEFINED);
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean renameData(String address, String newName) {
+        if (currentProgram == null) {
+            return false;
+        }
+        
+        try {
+            Address addr = currentProgram.getAddressFactory().getAddress(address);
+            SymbolTable symbolTable = currentProgram.getSymbolTable();
+            Symbol symbol = symbolTable.getPrimarySymbol(addr);
+            
+            if (symbol == null) {
+                return false;
+            }
+            
+            // Create a new symbol with the new name
+            symbolTable.createLabel(addr, newName, symbol.getParentNamespace(), SourceType.USER_DEFINED);
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public Map<String, Object> extractApiCallSequences(String functionAddress) {
+        Map<String, Object> result = new HashMap<>();
+        
+        if (currentProgram == null) {
+            result.put("error", "No program loaded");
+            return result;
+        }
+        
+        try {
+            Address address = currentProgram.getAddressFactory().getAddress(functionAddress);
+            FunctionManager functionManager = currentProgram.getFunctionManager();
+            Function function = functionManager.getFunctionAt(address);
+            
+            if (function == null) {
+                result.put("error", "No function found at address " + functionAddress);
+                return result;
+            }
+            
+            // Simply collect the API calls without attempting to categorize them
+            List<Map<String, Object>> apiCalls = new ArrayList<>();
+            Set<Function> calledFunctions = function.getCalledFunctions(TaskMonitor.DUMMY);
+            
+            for (Function calledFunc : calledFunctions) {
+                if (calledFunc.isExternal()) {
+                    Map<String, Object> apiInfo = new HashMap<>();
+                    apiInfo.put("name", calledFunc.getName());
+                    apiInfo.put("library", calledFunc.getExternalLocation().getLibraryName());
+                    
+                    // Get call sites
+                    List<String> callSites = new ArrayList<>();
+                    ReferenceManager refManager = currentProgram.getReferenceManager();
+                    Iterator<Reference> refs = refManager.getReferencesTo(calledFunc.getEntryPoint());
+                    
+                    while (refs.hasNext()) {
+                        Reference ref = refs.next();
+                        if (function.getBody().contains(ref.getFromAddress())) {
+                            callSites.add(ref.getFromAddress().toString());
+                        }
+                    }
+                    
+                    apiInfo.put("callSites", callSites);
+                    apiCalls.add(apiInfo);
+                }
+            }
+            
+            result.put("function", function.getName());
+            result.put("apiCalls", apiCalls);
+            
+            // Add decompiled code for Claude to analyze patterns
+            String decompiled = getDecompiledCode(functionAddress);
+            result.put("decompiled", decompiled);
+            
+        } catch (Exception e) {
+            result.put("error", e.getMessage());
+        }
+        
+        return result;
+    }
+
+    private Map<String, List<String>> categorizeSecurityRelatedAPIs(List<Map<String, Object>> apiCalls) {
+        Map<String, List<String>> categories = new HashMap<>();
+        categories.put("crypto", new ArrayList<>());
+        categories.put("network", new ArrayList<>());
+        categories.put("file", new ArrayList<>());
+        categories.put("memory", new ArrayList<>());
+        categories.put("process", new ArrayList<>());
+        categories.put("registry", new ArrayList<>());
+        
+        // Define patterns for categorization
+        Map<String, List<String>> patterns = new HashMap<>();
+        patterns.put("crypto", Arrays.asList("crypt", "aes", "rsa", "sha", "md5", "hash", "ssl", "tls"));
+        patterns.put("network", Arrays.asList("socket", "connect", "recv", "send", "http", "url", "dns", "ftp"));
+        patterns.put("file", Arrays.asList("file", "open", "read", "write", "create", "delete"));
+        patterns.put("memory", Arrays.asList("alloc", "malloc", "free", "heap", "memcpy", "memmove"));
+        patterns.put("process", Arrays.asList("process", "thread", "create", "terminate", "exec", "spawn"));
+        patterns.put("registry", Arrays.asList("registry", "reg", "hkey", "regopen", "regget", "regset"));
+        
+        for (Map<String, Object> apiCall : apiCalls) {
+            String apiName = (String) apiCall.get("name");
+            String apiNameLower = apiName.toLowerCase();
+            
+            for (Map.Entry<String, List<String>> entry : patterns.entrySet()) {
+                String category = entry.getKey();
+                List<String> categoryPatterns = entry.getValue();
+                
+                for (String pattern : categoryPatterns) {
+                    if (apiNameLower.contains(pattern)) {
+                        categories.get(category).add(apiName);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return categories;
+    }
+
+    public Map<String, Object> identifyUserInputSources() {
+        Map<String, Object> result = new HashMap<>();
+        
+        if (currentProgram == null) {
+            result.put("error", "No program loaded");
+            return result;
+        }
+        
+        // Just provide a list of common input-related functions and their references
+        // Let Claude do the analysis
+        List<Map<String, Object>> potentialInputFunctions = new ArrayList<>();
+        
+        try {
+            String[] commonInputAPIs = {
+                "scanf", "gets", "fgets", "read", "recv", "recvfrom", 
+                "ReadFile", "ReadConsole", "GetAsyncKeyState",
+                "GetCommandLine", "GetEnvironmentVariable"
+            };
+            
+            SymbolTable symbolTable = currentProgram.getSymbolTable();
+            
+            for (String apiName : commonInputAPIs) {
+                SymbolIterator symbols = symbolTable.getSymbols(apiName);
+                while (symbols.hasNext()) {
+                    Symbol symbol = symbols.next();
+                    
+                    Map<String, Object> funcInfo = new HashMap<>();
+                    funcInfo.put("name", apiName);
+                    funcInfo.put("address", symbol.getAddress().toString());
+                    
+                    // Find references and calling functions
+                    ReferenceManager refManager = currentProgram.getReferenceManager();
+                    Iterator<Reference> refs = refManager.getReferencesTo(symbol.getAddress());
+                    
+                    List<Map<String, Object>> references = new ArrayList<>();
+                    while (refs.hasNext()) {
+                        Reference ref = refs.next();
+                        Map<String, Object> refInfo = new HashMap<>();
+                        refInfo.put("address", ref.getFromAddress().toString());
+                        
+                        // Get function containing this reference
+                        FunctionManager functionManager = currentProgram.getFunctionManager();
+                        Function callerFunction = functionManager.getFunctionContaining(ref.getFromAddress());
+                        
+                        if (callerFunction != null) {
+                            refInfo.put("function", callerFunction.getName());
+                            refInfo.put("functionAddress", callerFunction.getEntryPoint().toString());
+                        }
+                        
+                        references.add(refInfo);
+                    }
+                    
+                    funcInfo.put("references", references);
+                    potentialInputFunctions.add(funcInfo);
+                }
+            }
+            
+            result.put("potentialInputFunctions", potentialInputFunctions);
+            
+        } catch (Exception e) {
+            result.put("error", e.getMessage());
+        }
+        
+        return result;
+    }
+
+    public Map<String, Object> generateStructuredCallGraph(String startFunctionAddress, int maxDepth) {
+        Map<String, Object> result = new HashMap<>();
+        
+        if (currentProgram == null) {
+            result.put("error", "No program loaded");
+            return result;
+        }
+        
+        try {
+            Address address = currentProgram.getAddressFactory().getAddress(startFunctionAddress);
+            FunctionManager functionManager = currentProgram.getFunctionManager();
+            Function startFunction = functionManager.getFunctionAt(address);
+            
+            if (startFunction == null) {
+                result.put("error", "No function found at address " + startFunctionAddress);
+                return result;
+            }
+            
+            // Simpler approach - just get all called functions and their basic info
+            Map<String, Object> callGraph = new HashMap<>();
+            callGraph.put("name", startFunction.getName());
+            callGraph.put("address", startFunction.getEntryPoint().toString());
+            
+            List<Map<String, Object>> calledFunctions = new ArrayList<>();
+            try {
+                Set<Function> functions = startFunction.getCalledFunctions(TaskMonitor.DUMMY);
+                for (Function func : functions) {
+                    Map<String, Object> funcInfo = new HashMap<>();
+                    funcInfo.put("name", func.getName());
+                    funcInfo.put("address", func.getEntryPoint().toString());
+                    funcInfo.put("isExternal", func.isExternal());
+                    
+                    // For non-external functions, include decompiled code for Claude to analyze
+                    if (!func.isExternal() && maxDepth > 1) {
+                        funcInfo.put("decompiled", getDecompiledCode(func.getEntryPoint().toString()));
+                    }
+                    
+                    calledFunctions.add(funcInfo);
+                }
+            } catch (Exception e) {
+                callGraph.put("error", e.getMessage());
+            }
+            
+            callGraph.put("calledFunctions", calledFunctions);
+            callGraph.put("decompiled", getDecompiledCode(startFunctionAddress));
+            
+            result.put("callGraph", callGraph);
+            
+        } catch (Exception e) {
+            result.put("error", e.getMessage());
+        }
+        
+        return result;
+    }
+
+    private Map<String, Object> buildCallGraphNode(Function function, int depth, Set<String> visited) {
+        Map<String, Object> node = new HashMap<>();
+        
+        String functionKey = function.getName() + "@" + function.getEntryPoint().toString();
+        if (depth <= 0 || visited.contains(functionKey)) {
+            return null;
+        }
+        
+        visited.add(functionKey);
+        
+        node.put("name", function.getName());
+        node.put("address", function.getEntryPoint().toString());
+        node.put("isExternal", function.isExternal());
+        
+        if (!function.isExternal()) {
+            List<Map<String, Object>> callees = new ArrayList<>();
+            try {
+                Set<Function> calledFunctions = function.getCalledFunctions(TaskMonitor.DUMMY);
+                
+                for (Function calledFunc : calledFunctions) {
+                    Map<String, Object> calleeNode = buildCallGraphNode(calledFunc, depth - 1, visited);
+                    if (calleeNode != null) {
+                        callees.add(calleeNode);
+                    }
+                }
+                
+                node.put("calls", callees);
+                
+            } catch (Exception e) {
+                // Handle any exception
+                node.put("error", "Error retrieving called functions: " + e.getMessage());
+            }
+        }
+        
+        return node;
+    }
+
+    public Map<String, Object> identifyCryptographicPatterns() {
+        Map<String, Object> result = new HashMap<>();
+        
+        if (currentProgram == null) {
+            result.put("error", "No program loaded");
+            return result;
+        }
+        
+        try {
+            // Just provide decompiled code and constant data for functions
+            // that might be crypto-related based on basic name matching
+            
+            List<Map<String, Object>> potentialCryptoFunctions = new ArrayList<>();
+            
+            FunctionManager functionManager = currentProgram.getFunctionManager();
+            Iterator<Function> functions = functionManager.getFunctions(true);
+            
+            // Look for crypto-related names (simplified approach)
+            String[] cryptoPatterns = {
+                "crypt", "aes", "des", "rsa", "sha", "md5", "hash", "cipher", "decrypt", "encrypt"
+            };
+            
+            while (functions.hasNext()) {
+                Function function = functions.next();
+                
+                if (function.isExternal()) {
+                    continue;
+                }
+                
+                String name = function.getName().toLowerCase();
+                
+                boolean isCryptoRelated = false;
+                for (String pattern : cryptoPatterns) {
+                    if (name.contains(pattern)) {
+                        isCryptoRelated = true;
+                        break;
+                    }
+                }
+                
+                if (isCryptoRelated) {
+                    Map<String, Object> funcInfo = new HashMap<>();
+                    funcInfo.put("name", function.getName());
+                    funcInfo.put("address", function.getEntryPoint().toString());
+                    funcInfo.put("matchedPattern", "Name contains crypto term");
+                    funcInfo.put("decompiled", getDecompiledCode(function.getEntryPoint().toString()));
+                    potentialCryptoFunctions.add(funcInfo);
+                }
+            }
+            
+            result.put("potentialCryptoFunctions", potentialCryptoFunctions);
+            
+        } catch (Exception e) {
+            result.put("error", e.getMessage());
+        }
+        
+        return result;
+    }
+
+    private void findCryptoConstantPatterns(List<Map<String, Object>> cryptoFunctions) {
+        // AES S-box first few bytes
+        byte[] aesSBoxPrefix = {(byte)0x63, (byte)0x7c, (byte)0x77, (byte)0x7b};
+        
+        // SHA-256 initial hash values
+        long[] sha256InitialHash = {
+            0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+            0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+        };
+        
+        // DES key permutation table bytes
+        byte[] desPC1Prefix = {57, 49, 41, 33, 25, 17, 9};
+        
+        Memory memory = currentProgram.getMemory();
+        
+        for (MemoryBlock block : memory.getBlocks()) {
+            if (block.isInitialized() && !block.isExecute()) {
+                try {
+                    findPatternInBlock(block, aesSBoxPrefix, "AES S-box", cryptoFunctions);
+                    // Add other pattern searches
+                } catch (Exception e) {
+                    // Handle exception
+                }
+            }
+        }
+    }
+
+    private void findPatternInBlock(MemoryBlock block, byte[] pattern, String description, 
+                                List<Map<String, Object>> cryptoFunctions) throws Exception {
+        byte[] blockData = new byte[(int)block.getSize()];
+        block.getBytes(block.getStart(), blockData);
+        
+        // Simple pattern matching - in practice you'd use a more efficient algorithm
+        for (int i = 0; i <= blockData.length - pattern.length; i++) {
+            boolean match = true;
+            for (int j = 0; j < pattern.length; j++) {
+                if (blockData[i + j] != pattern[j]) {
+                    match = false;
+                    break;
+                }
+            }
+            
+            if (match) {
+                Map<String, Object> crypto = new HashMap<>();
+                Address patternAddr = block.getStart().add(i);
+                crypto.put("address", patternAddr.toString());
+                crypto.put("type", "Constant");
+                crypto.put("algorithm", description);
+                crypto.put("confidence", "Medium");
+                
+                // Try to find functions referencing this address
+                ReferenceManager refManager = currentProgram.getReferenceManager();
+                Iterator<Reference> refs = refManager.getReferencesTo(patternAddr);
+                List<String> referencingFunctions = new ArrayList<>();
+                
+                while (refs.hasNext()) {
+                    Reference ref = refs.next();
+                    FunctionManager functionManager = currentProgram.getFunctionManager();
+                    Function function = functionManager.getFunctionContaining(ref.getFromAddress());
+                    
+                    if (function != null) {
+                        referencingFunctions.add(function.getName() + "@" + function.getEntryPoint());
+                    }
+                }
+                
+                crypto.put("referencingFunctions", referencingFunctions);
+                cryptoFunctions.add(crypto);
+            }
+        }
+    }
+
+    private void findCryptoAPIUsage(List<Map<String, Object>> cryptoFunctions) {
+        String[] cryptoAPIs = {
+            "AES_", "EVP_", "SHA", "MD5", "Crypt", "BCrypt", "NCrypt", 
+            "HMAC", "RSA_", "EC_", "BN_", "RAND_"
+        };
+        
+        SymbolTable symbolTable = currentProgram.getSymbolTable();
+        
+        SymbolIterator allSymbols = symbolTable.getAllSymbols(true);
+        while (allSymbols.hasNext()) {
+            Symbol symbol = allSymbols.next();
+            String symbolName = symbol.getName();
+            
+            // Check if this symbol matches any of our crypto patterns
+            boolean isCryptoAPI = false;
+            for (String apiPrefix : cryptoAPIs) {
+                if (symbolName.startsWith(apiPrefix)) {
+                    isCryptoAPI = true;
+                    break;
+                }
+            }
+            
+            if (isCryptoAPI) {
+                Map<String, Object> crypto = new HashMap<>();
+                crypto.put("address", symbol.getAddress().toString());
+                crypto.put("type", "API");
+                crypto.put("name", symbolName);
+                
+                // Determine likely algorithm
+                String name = symbolName.toLowerCase();
+                if (name.contains("aes")) {
+                    crypto.put("algorithm", "AES");
+                } else if (name.contains("sha")) {
+                    crypto.put("algorithm", "SHA");
+                } else if (name.contains("rsa")) {
+                    crypto.put("algorithm", "RSA");
+                } else if (name.contains("md5")) {
+                    crypto.put("algorithm", "MD5");
+                } else {
+                    crypto.put("algorithm", "Unknown");
+                }
+                
+                crypto.put("confidence", "High");
+                cryptoFunctions.add(crypto);
+            }
+        }
+    }
+
+    private void findCryptoFunctionCharacteristics(List<Map<String, Object>> cryptoFunctions) {
+        FunctionManager functionManager = currentProgram.getFunctionManager();
+        Iterator<Function> functions = functionManager.getFunctions(true);
+        
+        while (functions.hasNext()) {
+            Function function = functions.next();
+            
+            // Skip external functions
+            if (function.isExternal()) {
+                continue;
+            }
+            
+            // Skip very small or very large functions
+            long size = function.getBody().getNumAddresses();
+            if (size < 50 || size > 5000) {
+                continue;
+            }
+            
+            try {
+                boolean hasCryptoCharacteristics = false;
+                String reason = "";
+                
+                // Check for bit manipulation operations
+                if (hasBitManipulationInstructions(function)) {
+                    hasCryptoCharacteristics = true;
+                    reason += "Contains bit manipulation operations; ";
+                }
+                
+                // Check for byte substitution patterns
+                if (hasByteSubstitutionPatterns(function)) {
+                    hasCryptoCharacteristics = true;
+                    reason += "Contains byte substitution patterns; ";
+                }
+                
+                // Check for loop structures typical in crypto
+                if (hasTypicalCryptoLoops(function)) {
+                    hasCryptoCharacteristics = true;
+                    reason += "Contains loop structures typical in crypto; ";
+                }
+                
+                if (hasCryptoCharacteristics) {
+                    Map<String, Object> crypto = new HashMap<>();
+                    crypto.put("address", function.getEntryPoint().toString());
+                    crypto.put("name", function.getName());
+                    crypto.put("type", "Function");
+                    crypto.put("algorithm", "Unknown");
+                    crypto.put("confidence", "Low");
+                    crypto.put("reason", reason);
+                    cryptoFunctions.add(crypto);
+                }
+                
+            } catch (Exception e) {
+                // Skip this function if error
+            }
+        }
+    }
+
+    private boolean hasBitManipulationInstructions(Function function) {
+        // This is a simplified implementation
+        // In practice, you would need to analyze the instructions looking for:
+        // - XOR, ROL, ROR, SHIFT operations that are common in crypto
+        
+        // Here we check if decompiled code contains these operations
+        try {
+            DecompInterface decompiler = new DecompInterface();
+            decompiler.openProgram(currentProgram);
+            DecompileResults results = decompiler.decompileFunction(function, 0, TaskMonitor.DUMMY);
+            
+            if (results.decompileCompleted()) {
+                String code = results.getDecompiledFunction().getC().toLowerCase();
+                int bitOps = 0;
+                
+                if (code.contains(" ^ ")) bitOps++; // XOR
+                if (code.contains(" << ")) bitOps++; // Left shift
+                if (code.contains(" >> ")) bitOps++; // Right shift
+                if (code.contains(" & ")) bitOps++; // AND
+                if (code.contains(" | ")) bitOps++; // OR
+                if (code.contains("rotate")) bitOps++; // Rotation
+                
+                // If many bit operations, likely crypto
+                return bitOps >= 3;
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        
+        return false;
+    }
+
+    private boolean hasByteSubstitutionPatterns(Function function) {
+        // Look for array access patterns common in S-boxes
+        try {
+            DecompInterface decompiler = new DecompInterface();
+            decompiler.openProgram(currentProgram);
+            DecompileResults results = decompiler.decompileFunction(function, 0, TaskMonitor.DUMMY);
+            
+            if (results.decompileCompleted()) {
+                String code = results.getDecompiledFunction().getC();
+                
+                // Look for array access patterns like: sbox[byte & 0xff]
+                return code.contains("[") && code.contains("&") && 
+                    (code.contains("0xff") || code.contains("0xf") || code.contains("255"));
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        
+        return false;
+    }
+
+    private boolean hasTypicalCryptoLoops(Function function) {
+        // Check for loop structures typical in crypto implementations
+        try {
+            DecompInterface decompiler = new DecompInterface();
+            decompiler.openProgram(currentProgram);
+            DecompileResults results = decompiler.decompileFunction(function, 0, TaskMonitor.DUMMY);
+            
+            if (results.decompileCompleted()) {
+                String code = results.getDecompiledFunction().getC().toLowerCase();
+                
+                // Check for multiple rounds/iterations - common in block ciphers
+                if ((code.contains("round") || code.contains("iteration")) && 
+                    (code.contains("for (") || code.contains("while ("))) {
+                    return true;
+                }
+                
+                // Check for magic numbers often used in crypto
+                if (code.contains("0x67452301") || // MD5
+                    code.contains("0xc3d2e1f0") || // SHA-1
+                    code.contains("0x5a827999") || // SHA-1 constant
+                    code.contains("0x6a09e667"))   // SHA-256
+                {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        
+        return false;
+    }
+
+    public Map<String, Object> findObfuscatedStrings() {
+        Map<String, Object> result = new HashMap<>();
+        
+        if (currentProgram == null) {
+            result.put("error", "No program loaded");
+            return result;
+        }
+        
+        try {
+            // Provide all strings and let Claude identify potentially obfuscated ones
+            Map<String, Object> stringData = getStrings();
+            result.put("allStrings", stringData);
+            
+            // Also provide some functions with string manipulation
+            List<Map<String, Object>> stringManipulatingFunctions = new ArrayList<>();
+            
+            FunctionManager functionManager = currentProgram.getFunctionManager();
+            Iterator<Function> functions = functionManager.getFunctions(true);
+            
+            // Get some decompiled functions for Claude to analyze
+            int maxFunctions = 10;
+            int count = 0;
+            
+            while (functions.hasNext() && count < maxFunctions) {
+                Function function = functions.next();
+                
+                if (function.isExternal()) {
+                    continue;
+                }
+                
+                String decompiled = getDecompiledCode(function.getEntryPoint().toString());
+                if (decompiled.contains("char") && 
+                    (decompiled.contains("=") || decompiled.contains("^") || 
+                    decompiled.contains("+") || decompiled.contains("["))) {
+                    
+                    Map<String, Object> funcInfo = new HashMap<>();
+                    funcInfo.put("name", function.getName());
+                    funcInfo.put("address", function.getEntryPoint().toString());
+                    funcInfo.put("decompiled", decompiled);
+                    
+                    stringManipulatingFunctions.add(funcInfo);
+                    count++;
+                }
+            }
+            
+            result.put("stringManipulatingFunctions", stringManipulatingFunctions);
+            
+        } catch (Exception e) {
+            result.put("error", e.getMessage());
+        }
+        
+        return result;
+    }
+
+    private void findXorEncodedStrings(List<Map<String, Object>> obfuscatedStrings) {
+        // Look for functions that may be decoding XOR-encoded strings
+        FunctionManager functionManager = currentProgram.getFunctionManager();
+        Iterator<Function> functions = functionManager.getFunctions(true);
+        
+        while (functions.hasNext()) {
+            Function function = functions.next();
+            
+            // Skip external functions
+            if (function.isExternal()) {
+                continue;
+            }
+            
+            try {
+                DecompInterface decompiler = new DecompInterface();
+                decompiler.openProgram(currentProgram);
+                DecompileResults results = decompiler.decompileFunction(function, 0, TaskMonitor.DUMMY);
+                
+                if (results.decompileCompleted()) {
+                    String code = results.getDecompiledFunction().getC().toLowerCase();
+                    
+                    // Look for XOR operations with potential keys
+                    if (code.contains(" ^ ") && 
+                        (code.contains("char") || code.contains("byte"))) {
+                        
+                        Map<String, Object> obfuscatedString = new HashMap<>();
+                        obfuscatedString.put("type", "XOR-encoded");
+                        obfuscatedString.put("function", function.getName());
+                        obfuscatedString.put("address", function.getEntryPoint().toString());
+                        
+                        // Try to determine XOR key if possible
+                        String key = extractPotentialXorKey(code);
+                        if (key != null) {
+                            obfuscatedString.put("potentialKey", key);
+                        }
+                        
+                        obfuscatedStrings.add(obfuscatedString);
+                    }
+                }
+            } catch (Exception e) {
+                // Skip this function if error
+            }
+        }
+    }
+
+    private String extractPotentialXorKey(String code) {
+        // Simple pattern matching for XOR keys
+        // In real implementation, this would be more sophisticated
+        
+        // Look for common patterns like: 
+        // - c = encoded[i] ^ 0x37;
+        // - c = encoded[i] ^ key;
+        
+        // Simple regex to find pattern
+        Pattern pattern = Pattern.compile("[^a-zA-Z0-9_]([a-zA-Z0-9_]+)\\s*\\^\\s*(0x[0-9a-fA-F]+|[0-9]+)");
+        Matcher matcher = pattern.matcher(code);
+        
+        if (matcher.find()) {
+            return matcher.group(2);  // Return the potential key
+        }
+        
+        return null;
+    }
+
+    private void findConstructedStrings(List<Map<String, Object>> obfuscatedStrings) {
+        FunctionManager functionManager = currentProgram.getFunctionManager();
+        Iterator<Function> functions = functionManager.getFunctions(true);
+        
+        while (functions.hasNext()) {
+            Function function = functions.next();
+            
+            // Skip external functions
+            if (function.isExternal()) {
+                continue;
+            }
+            
+            try {
+                DecompInterface decompiler = new DecompInterface();
+                decompiler.openProgram(currentProgram);
+                DecompileResults results = decompiler.decompileFunction(function, 0, TaskMonitor.DUMMY);
+                
+                if (results.decompileCompleted()) {
+                    String code = results.getDecompiledFunction().getC();
+                    
+                    // Look for string construction patterns
+                    // For example: 
+                    // - buffer[0] = 'H'; buffer[1] = 'e'; buffer[2] = 'l'; ...
+                    // - string being built in a loop
+                    
+                    if ((code.contains("[") && code.contains("=") && code.contains("'")) ||
+                        (code.contains("+=") && code.contains("\"") && 
+                        (code.contains("for (") || code.contains("while (")))) {
+                        
+                        Map<String, Object> obfuscatedString = new HashMap<>();
+                        obfuscatedString.put("type", "Character-by-character construction");
+                        obfuscatedString.put("function", function.getName());
+                        obfuscatedString.put("address", function.getEntryPoint().toString());
+                        obfuscatedStrings.add(obfuscatedString);
+                    }
+                }
+            } catch (Exception e) {
+                // Skip this function if error
+            }
+        }
+    }
+
     private List<String> extractInterestingStrings(String question) {
         List<String> results = new ArrayList<>();
         

@@ -83,6 +83,48 @@ public class MCPClientHandler implements Runnable {
                             Map<String, Object> memoryMap = contextProvider.getMemoryMap();
                             response.add("result", gson.toJsonTree(memoryMap));
                             break;
+
+                        case "renameFunction":
+                            String currentName = request.get("params").getAsJsonObject().get("currentName").getAsString();
+                            String newFuncName = request.get("params").getAsJsonObject().get("newName").getAsString();
+                            boolean funcRenamed = contextProvider.renameFunction(currentName, newFuncName);
+                            response.addProperty("result", funcRenamed);
+                            break;
+
+                        case "renameData":
+                            String dataAddr = request.get("params").getAsJsonObject().get("address").getAsString();
+                            String newDataName = request.get("params").getAsJsonObject().get("newName").getAsString();
+                            boolean dataRenamed = contextProvider.renameData(dataAddr, newDataName);
+                            response.addProperty("result", dataRenamed);
+                            break;
+
+                        case "extractApiCallSequences":
+                            String apiCallFuncAddr = request.get("params").getAsJsonObject().get("address").getAsString();
+                            Map<String, Object> apiCallSequences = contextProvider.extractApiCallSequences(apiCallFuncAddr);
+                            response.add("result", gson.toJsonTree(apiCallSequences));
+                            break;
+
+                        case "identifyUserInputSources":
+                            Map<String, Object> inputSources = contextProvider.identifyUserInputSources();
+                            response.add("result", gson.toJsonTree(inputSources));
+                            break;
+
+                        case "generateStructuredCallGraph":
+                            String startFuncAddr = request.get("params").getAsJsonObject().get("address").getAsString();
+                            int maxDepth = request.get("params").getAsJsonObject().get("maxDepth").getAsInt();
+                            Map<String, Object> callGraph = contextProvider.generateStructuredCallGraph(startFuncAddr, maxDepth);
+                            response.add("result", gson.toJsonTree(callGraph));
+                            break;
+
+                        case "identifyCryptographicPatterns":
+                            Map<String, Object> cryptoPatterns = contextProvider.identifyCryptographicPatterns();
+                            response.add("result", gson.toJsonTree(cryptoPatterns));
+                            break;
+
+                        case "findObfuscatedStrings":
+                            Map<String, Object> obfuscatedStrings = contextProvider.findObfuscatedStrings();
+                            response.add("result", gson.toJsonTree(obfuscatedStrings));
+                            break;
                             
                         default:
                             response.addProperty("error", "Unknown method: " + method);
