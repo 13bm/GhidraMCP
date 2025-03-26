@@ -29,13 +29,21 @@ class GhidraMCPSocketClient:
         self.id_counter = 0
         
     def connect(self):
+        """Connect to the MCP server"""
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.host, self.port))
-            logger.info(f"Connected to Ghidra MCP server at {self.host}:{self.port}")
-            return True
+            
+            # Check for successful connection with a simple request
+            response = self.send_request("getContext")
+            if response:
+                print(f"Connected to MCP server at {self.host}:{self.port}")
+                return True
+            else:
+                print("Connected but received invalid response from server")
+                return False
         except Exception as e:
-            logger.error(f"Failed to connect to Ghidra MCP server: {str(e)}")
+            print(f"Failed to connect to MCP server: {str(e)}")
             return False
         
     def disconnect(self):
@@ -47,8 +55,9 @@ class GhidraMCPSocketClient:
         return self.socket is not None
             
     def send_request(self, method, params=None):
+        """Send a request to the MCP server"""
         if not self.socket:
-            raise Exception("Not connected to Ghidra MCP server")
+            raise Exception("Not connected to MCP server")
             
         self.id_counter += 1
         request = {
@@ -62,23 +71,38 @@ class GhidraMCPSocketClient:
         request_str = json.dumps(request) + "\n"
         self.socket.sendall(request_str.encode())
         
-        # Read response
+        # Read response with better error handling
         response_data = b""
-        while True:
-            chunk = self.socket.recv(4096)
-            if not chunk:
-                break
-            response_data += chunk
-            if response_data.endswith(b"\n"):
-                break
+        try:
+            while True:
+                chunk = self.socket.recv(4096)
+                if not chunk:
+                    break
+                response_data += chunk
+                if b"\n" in response_data:
+                    break
+        except Exception as e:
+            print(f"Error receiving data: {str(e)}")
+            return None
         
-        response_str = response_data.decode()
-        response = json.loads(response_str)
-        
-        if "error" in response:
-            logger.warning(f"Error in Ghidra MCP response: {response['error']}")
-        
-        return response.get("result")
+        try:
+            # Try to decode and parse as JSON
+            response_str = response_data.decode('utf-8').strip()
+            response = json.loads(response_str)
+            
+            if "error" in response:
+                print(f"Error from server: {response['error']}")
+            
+            return response.get("result")
+        except UnicodeDecodeError:
+            print("Warning: Received data with encoding issues")
+            # Try alternate encoding or show hex
+            print(f"Raw response: {response_data[:100].hex()}")
+            return None
+        except json.JSONDecodeError:
+            print("Warning: Received non-JSON response")
+            print(f"Raw response: {response_data[:100]}")
+            return None
         
     def get_context(self):
         return self.send_request("getContext")
