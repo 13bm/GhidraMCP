@@ -19,7 +19,7 @@ GhidraMCP bridges the gap between Ghidra's powerful reverse engineering capabili
 
 ### Prerequisites
 
-- Ghidra 11.0 or newer
+- Ghidra 11.2.1+
 - Java 17 or newer
 - Python 3.8+ (for the bridge script)
 
