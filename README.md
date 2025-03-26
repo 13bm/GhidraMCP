@@ -1,107 +1,180 @@
-The server automatically starts when you open a Ghidra project after enabling the plugin. You can connect any MCP-compatible AI client to this address.# GhidraMCP
+# GhidraMCP
 
 A Ghidra plugin that implements the Model Context Protocol (MCP) for AI-assisted binary analysis.
 
 ## Overview
 
-GhidraMCP bridges the gap between Ghidra's powerful reverse engineering capabilities and AI assistants through the Model Context Protocol (MCP). This plugin allows AI models to connect to Ghidra and assist with binary analysis tasks.
+GhidraMCP bridges the gap between Ghidra's powerful reverse engineering capabilities and AI assistants through the Model Context Protocol (MCP). This plugin enables AI models to connect to Ghidra and assist with binary analysis tasks, making reverse engineering more efficient and accessible.
 
 ## Features
 
-- Connect AI assistants to Ghidra via the Model Context Protocol
-- Analyze binaries using natural language queries
-- Retrieve function information and decompiled code
-- Explore imports, exports, and memory layouts
-- Get AI-assisted insights about binary behaviors and patterns
+- **AI-Powered Binary Analysis**: Connect AI assistants to Ghidra via the Model Context Protocol
+- **Natural Language Interface**: Ask questions about binaries in plain English
+- **Deep Code Insights**: Retrieve detailed function information and decompiled code
+- **Binary Structure Analysis**: Explore imports, exports, and memory layouts
+- **Automated Security Analysis**: Get AI-assisted insights about potential security vulnerabilities
+- **Cross-Platform Compatibility**: Works on all platforms supported by Ghidra
 
 ## Installation
 
-1. Download the latest release ZIP file
+### Prerequisites
+
+- Ghidra 11.0 or newer
+- Java 17 or newer
+- Python 3.8+ (for the bridge script)
+
+### Steps
+
+1. Download the latest release ZIP file from the [Releases](https://github.com/yourusername/GhidraMCP/releases) page
 2. Open Ghidra
-3. Navigate to File > Install Extensions
+3. Navigate to `File > Install Extensions`
 4. Click the "+" button and select the downloaded ZIP file
 5. Restart Ghidra to complete the installation
-6. Enable the extension by going to File > Configure > Miscellaneous and checking the box next to "MCPServerPlugin"
+6. Enable the extension by going to `File > Configure > Miscellaneous` and checking the box next to "MCPServerPlugin"
 
 ## Usage
 
-### Connecting to the MCP Server
+### Starting the MCP Server
 
-Once enabled, the plugin starts an MCP server with the following default configuration:
-- Host: localhost
-- Port: 8765
+The server automatically starts when you open a Ghidra project after enabling the plugin. By default, it runs on:
+- Host: `localhost`
+- Port: `8765`
 
-### Connecting with Claude
-
-To connect Claude to the GhidraMCP plugin, you'll need to configure the MCP server settings and start the bridge script. 
-
-1. Add the following configuration to your Claude MCP setup:
-
-```json
-{
-  "mcpServers": {
-    "ghidra": {
-      "command": "python",
-      "args": ["PATH-TO-REPO/GhidraMCP/ghidra_server.py"]
-    }
-  }
-}
+You can verify the server is running by checking the Ghidra console for messages like:
+```
+MCP Server started on port 8765
 ```
 
-2. Replace `PATH-TO-REPO` with the actual path to your GhidraMCP repository on your system.
+### Connecting with AI Assistants
 
-3. Start the bridge script by running the `ghidra_server.py` Python script:
-   ```
-   python PATH-TO-REPO/GhidraMCP/ghidra_server.py
+#### Connecting with Claude
+
+To connect Claude to the GhidraMCP plugin:
+
+1. Install the MCP bridge script:
+   ```bash
+   pip install FastMCP
    ```
 
-This script must be running to bridge the connection between Ghidra and Claude desktop. It acts as an intermediary that allows Claude to communicate with Ghidra through the MCP protocol.
+2. Add the following configuration to your Claude MCP setup:
+   ```json
+   {
+     "mcpServers": {
+       "ghidra": {
+         "command": "python",
+         "args": ["PATH-TO-REPO/GhidraMCP/ghidra_server.py"]
+       }
+     }
+   }
+   ```
+
+3. Start the bridge script:
+   ```bash
+   python ./ghidra_server.py
+   ```
+
+The bridge script creates a connection between Ghidra and Claude, enabling real-time binary analysis through natural language.
 
 ### Available Tools
 
-The plugin exposes several functions through the MCP interface:
+The plugin exposes several powerful functions through the MCP interface:
 
-- `get_function(address, decompile=False)`: Retrieve information about a function at a specific address
-- `analyze_binary(question)`: Ask natural language questions about the loaded binary
-- `get_imports()`: List all imported functions in the binary
-- `get_exports()`: List all exported functions in the binary
-- `get_memory_map()`: Get the memory layout of the binary
+| Tool | Description |
+|------|-------------|
+| `get_function(address, decompile=False)` | Retrieve detailed information about a function at a specific address |
+| `analyze_binary(question)` | Ask natural language questions about the loaded binary |
+| `get_imports()` | List all imported functions in the binary |
+| `get_exports()` | List all exported functions in the binary |
+| `get_memory_map()` | Get the memory layout of the binary |
+| `connect_to_ghidra(host, port)` | Connect to a specific Ghidra instance |
 
 ### Example Queries
 
 Here are examples of questions you can ask through an MCP-compatible AI client:
 
+- "What encryption algorithms are used in this binary?"
+- "Can you show me the decompiled code for the function at 0x401000?"
+- "What suspicious API calls does this malware make?"
+- "Explain the purpose of this binary based on its imports and exports."
+- "How does the authentication mechanism in this program work?"
+- "Are there any potential buffer overflow vulnerabilities in this code?"
+- "What network connections does this binary establish?"
+
+## Advanced Usage
+
+### Custom Configurations
+
+You can modify the server port by editing the `MCPServerPlugin.java` file:
+
+```java
+server.setPort(YOUR_CUSTOM_PORT);
 ```
-What encryption algorithms are used in this binary?
-Can you show me the decompiled code for the function at 0x401000?
-What suspicious API calls does this malware make?
-Explain the purpose of this binary based on its imports and exports.
-How does the authentication mechanism in this program work?
-```
+
+### Integration with Analysis Workflows
+
+GhidraMCP can be integrated into your existing analysis workflows:
+
+1. Use Ghidra's standard analysis features to identify areas of interest
+2. Leverage AI assistance through GhidraMCP for deeper understanding
+3. Combine the AI insights with your manual analysis
 
 ## Building from Source
 
 To build the plugin from source:
 
 1. Clone this repository
+   ```bash
+   git clone https://github.com/yourusername/GhidraMCP.git
+   ```
+
 2. Set up a Ghidra development environment as described in the [Ghidra Developer Guide](https://github.com/NationalSecurityAgency/ghidra/blob/master/DevGuide.md)
-3. Build with Gradle: `gradle buildExtension`
-4. The extension ZIP will be created in the `dist` directory
 
-## Development
+3. Set the `GHIDRA_INSTALL_DIR` environment variable:
+   ```bash
+   export GHIDRA_INSTALL_DIR=/path/to/ghidra
+   ```
 
-This is an early-stage project intended to demonstrate the potential of combining AI capabilities with Ghidra through the Model Context Protocol. Contributions are welcome!
+4. Build with Gradle:
+   ```bash
+   ./gradlew buildExtension
+   ```
+
+5. The extension ZIP will be created in the `dist` directory
+
+## Troubleshooting
+
+### Common Issues
+
+- **Connection Issues**: Make sure the Ghidra instance is running and the plugin is enabled
+- **Port Conflicts**: If port 8765 is already in use, modify the port in the plugin configuration
+- **Bridge Script Errors**: Check if all required Python packages are installed with `pip install FastMCP`
+
+### Logs
+
+Check the following logs for troubleshooting:
+- Ghidra console for server-side messages
+- `ghidra_mcp_bridge.log` for bridge script issues
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
 
+1. Fork the repository
+2. Create your feature branch: `git checkout -b feature/amazing-feature`
+3. Commit your changes: `git commit -m 'Add some amazing feature'`
+4. Push to the branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
+
 ## License
 
-See the LICENSE file for details about the project's license.
+This project is licensed under the [Apache License 2.0](LICENSE) - see the LICENSE file for details.
 
 ## Acknowledgments
 
 - [National Security Agency (NSA)](https://github.com/NationalSecurityAgency/ghidra) for developing Ghidra
 - [Model Context Protocol](https://modelcontextprotocol.io/) community
 - All contributors to this project
+
+---
+
+*GhidraMCP is not affiliated with or endorsed by the NSA or the Ghidra project.*
