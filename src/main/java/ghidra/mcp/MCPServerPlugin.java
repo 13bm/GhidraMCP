@@ -18,13 +18,6 @@ public class MCPServerPlugin extends ProgramPlugin {
 
     public MCPServerPlugin(PluginTool tool) {
         super(tool);
-        server = new MCPServer(tool);
-        
-        // Automatically start the server on port 8765
-        server.setPort(8765);
-        server.startServer();
-        
-        System.out.println("MCP Server started on port 8765");
     }
     
     public MCPServer getServer() {

@@ -10,6 +10,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import javax.swing.SwingUtilities;
+import java.lang.reflect.InvocationTargetException;
 
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
@@ -29,6 +31,7 @@ import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
 import ghidra.program.model.symbol.SymbolIterator;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.Namespace;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 import ghidra.program.model.listing.Data;
@@ -375,55 +378,100 @@ public class MCPContextProvider {
         if (currentProgram == null) {
             return false;
         }
-    
+        
+        final boolean[] success = new boolean[1];
+        success[0] = false;
+        
         try {
-            FunctionManager functionManager = currentProgram.getFunctionManager();
-            Function function = null;
-            
-            // Try to find the function by name
-            Iterator<Function> functions = functionManager.getFunctions(true);
-            while (functions.hasNext()) {
-                Function func = functions.next();
-                if (func.getName().equals(currentName)) {
-                    function = func;
-                    break;
+            // Run on the Swing thread for thread safety
+            SwingUtilities.invokeAndWait(() -> {
+                // Start a transaction for proper undo/redo support
+                int txId = currentProgram.startTransaction("Rename Function");
+                
+                try {
+                    // Find the function by its name
+                    FunctionManager functionManager = currentProgram.getFunctionManager();
+                    Iterator<Function> functions = functionManager.getFunctions(true);
+                    Function targetFunction = null;
+                    
+                    while (functions.hasNext()) {
+                        Function function = functions.next();
+                        if (function.getName().equals(currentName)) {
+                            targetFunction = function;
+                            break;
+                        }
+                    }
+                    
+                    if (targetFunction != null) {
+                        // Rename the function
+                        targetFunction.setName(newName, SourceType.USER_DEFINED);
+                        success[0] = true;
+                    }
+                } catch (Exception e) {
+                    System.err.println("Error renaming function: " + e.getMessage());
+                    e.printStackTrace();
+                } finally {
+                    // End the transaction, applying changes if successful
+                    currentProgram.endTransaction(txId, success[0]);
                 }
-            }
-            
-            if (function == null) {
-                return false;
-            }
-            
-            // Rename the function
-            function.setName(newName, SourceType.USER_DEFINED);
-            return true;
-        } catch (Exception e) {
+            });
+        } catch (InterruptedException | InvocationTargetException e) {
+            System.err.println("Error executing on Swing thread: " + e.getMessage());
             e.printStackTrace();
-            return false;
         }
+        
+        return success[0];
     }
 
-    public boolean renameData(String address, String newName) {
+    public boolean renameData(String addressStr, String newName) {
         if (currentProgram == null) {
             return false;
         }
         
+        final boolean[] success = new boolean[1];
+        success[0] = false;
+        
         try {
-            Address addr = currentProgram.getAddressFactory().getAddress(address);
-            SymbolTable symbolTable = currentProgram.getSymbolTable();
-            Symbol symbol = symbolTable.getPrimarySymbol(addr);
-            
-            if (symbol == null) {
-                return false;
-            }
-            
-            // Create a new symbol with the new name
-            symbolTable.createLabel(addr, newName, symbol.getParentNamespace(), SourceType.USER_DEFINED);
-            return true;
-        } catch (Exception e) {
+            // Run on the Swing thread for thread safety
+            SwingUtilities.invokeAndWait(() -> {
+                // Start a transaction for proper undo/redo support
+                int txId = currentProgram.startTransaction("Rename Data");
+                
+                try {
+                    // Convert the address string to an Address object
+                    Address address = currentProgram.getAddressFactory().getAddress(addressStr);
+                    if (address == null) {
+                        return; // Invalid address
+                    }
+                    
+                    // Get the symbol table
+                    SymbolTable symbolTable = currentProgram.getSymbolTable();
+                    Symbol symbol = symbolTable.getPrimarySymbol(address);
+                    
+                    if (symbol != null) {
+                        // Rename existing symbol
+                        symbol.setName(newName, SourceType.USER_DEFINED);
+                        success[0] = true;
+                    } else {
+                        // Create a new symbol with the specified name
+                        Namespace namespace = currentProgram.getGlobalNamespace();
+                        symbolTable.createLabel(address, newName, namespace, SourceType.USER_DEFINED);
+                        success[0] = true;
+                    }
+                } catch (Exception e) {
+                    System.err.println("Error renaming data: " + e.getMessage());
+                    e.printStackTrace();
+                } finally {
+                    // End the transaction, applying changes if successful
+                    currentProgram.endTransaction(txId, success[0]);
+                }
+            });
+        } catch (InterruptedException | InvocationTargetException e) {
+            System.err.println("Error executing on Swing thread: " + e.getMessage());
             e.printStackTrace();
-            return false;
         }
+        
+        return success[0];
     }
 
     public Map<String, Object> extractApiCallSequences(String functionAddress) {
