@@ -1,4 +1,5 @@
 # GhidraMCP
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/13bm/GhidraMCP)](https://archestra.ai/mcp-catalog/13bm__ghidramcp)
 
 A Ghidra plugin that implements the Model Context Protocol (MCP) for AI-assisted binary analysis.
 
