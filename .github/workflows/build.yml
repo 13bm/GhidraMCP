@@ -1,0 +1,284 @@
+name: Build GhidraMCP Extension
+
+on:
+  push:
+    branches: [ master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  GO_VERSION: "1.23"
+  JAVA_VERSION: "21"
+
+jobs:
+  # Job 0: Read version from extension.properties (single source of truth)
+  read-version:
+    name: Read Version
+    runs-on: ubuntu-latest
+    outputs:
+      ghidra_version: ${{ steps.version.outputs.ghidra_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from extension.properties
+        id: version
+        run: |
+          VERSION=$(grep '^version=' extension.properties | cut -d'=' -f2)
+          echo "ghidra_version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Ghidra version from extension.properties: $VERSION"
+
+  # Job 1: Cross-compile the Go bridge for all platforms
+  build-bridge:
+    name: Build Bridge (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            platform_dir: linux_x86_64
+            binary_name: mcp_bridge
+          - goos: windows
+            goarch: amd64
+            platform_dir: win_x86_64
+            binary_name: mcp_bridge.exe
+          - goos: darwin
+            goarch: amd64
+            platform_dir: mac_x86_64
+            binary_name: mcp_bridge
+          - goos: darwin
+            goarch: arm64
+            platform_dir: mac_aarch64
+            binary_name: mcp_bridge
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Tidy Go modules
+        working-directory: mcp-bridge
+        run: |
+          go mod tidy
+
+      - name: Run Go tests
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        working-directory: mcp-bridge
+        run: |
+          go test ./... -v -count=1
+
+      - name: Build bridge binary
+        working-directory: mcp-bridge
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          go build -ldflags="-s -w" -o ../data/os/${{ matrix.platform_dir }}/${{ matrix.binary_name }} .
+
+      - name: Upload bridge artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-${{ matrix.platform_dir }}
+          path: data/os/${{ matrix.platform_dir }}/
+          retention-days: 1
+
+  # Job 2: Build the Ghidra extension with all bridge binaries
+  build-extension:
+    name: Build Ghidra Extension
+    runs-on: ubuntu-latest
+    needs: [build-bridge, read-version]
+    env:
+      GHIDRA_VERSION: ${{ needs.read-version.outputs.ghidra_version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Validate version format
+        run: |
+          if ! echo "$GHIDRA_VERSION" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
+            echo "ERROR: Invalid Ghidra version format: '$GHIDRA_VERSION'"
+            echo "Expected format: X.Y or X.Y.Z (e.g. 11.2.1)"
+            exit 1
+          fi
+          echo "Version format valid: $GHIDRA_VERSION"
+
+      - name: Download Ghidra
+        run: |
+          # Use the GitHub API to find the actual release asset URL for the target version
+          RELEASE_TAG="Ghidra_${GHIDRA_VERSION}_build"
+          echo "Looking for Ghidra release: $RELEASE_TAG"
+
+          # Get the release metadata including the download URL and checksum file
+          RELEASE_JSON=$(curl -sL \
+            "https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/tags/${RELEASE_TAG}")
+
+          ASSET_URL=$(echo "$RELEASE_JSON" \
+            | jq -r '.assets[] | select(.name | test("PUBLIC.*\\.zip$")) | .browser_download_url' \
+            | head -1)
+
+          if [ -z "$ASSET_URL" ] || [ "$ASSET_URL" = "null" ]; then
+            echo "ERROR: Could not find Ghidra ${GHIDRA_VERSION} release asset"
+            echo "Checked tag: ${RELEASE_TAG}"
+            exit 1
+          fi
+
+          # Check for a SHA-256 checksum file in the release assets
+          SHA256_URL=$(echo "$RELEASE_JSON" \
+            | jq -r '.assets[] | select(.name | test("sha256")) | .browser_download_url' \
+            | head -1)
+
+          echo "Downloading: $ASSET_URL"
+          wget -q "$ASSET_URL" -O ghidra.zip
+
+          # Verify checksum if available
+          if [ -n "$SHA256_URL" ] && [ "$SHA256_URL" != "null" ]; then
+            echo "Verifying SHA-256 checksum..."
+            wget -q "$SHA256_URL" -O ghidra.sha256
+            EXPECTED=$(grep -oP '[a-fA-F0-9]{64}' ghidra.sha256 | head -1)
+            ACTUAL=$(sha256sum ghidra.zip | awk '{print $1}')
+            if [ "$EXPECTED" != "$ACTUAL" ]; then
+              echo "ERROR: SHA-256 checksum mismatch!"
+              echo "Expected: $EXPECTED"
+              echo "Actual:   $ACTUAL"
+              exit 1
+            fi
+            echo "Checksum verified: $ACTUAL"
+          else
+            echo "No SHA-256 checksum file found in release — skipping verification"
+          fi
+
+          unzip -q ghidra.zip -d /tmp/
+          GHIDRA_DIR=$(ls -d /tmp/ghidra_* | head -1)
+          echo "GHIDRA_INSTALL_DIR=$GHIDRA_DIR" >> $GITHUB_ENV
+          echo "Ghidra installed to: $GHIDRA_DIR"
+
+      - name: Download all bridge binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bridge-*
+          path: data/os/
+          merge-multiple: false
+
+      - name: Organize bridge binaries
+        run: |
+          # Artifacts are downloaded as bridge-PLATFORM/files
+          # Move them to the correct data/os/PLATFORM/ structure
+          for dir in data/os/bridge-*/; do
+            platform=$(basename "$dir" | sed 's/bridge-//')
+            mkdir -p "data/os/$platform"
+            cp -r "$dir"* "data/os/$platform/" 2>/dev/null || true
+          done
+          # Clean up the bridge- prefix directories
+          rm -rf data/os/bridge-*
+          # Make binaries executable
+          chmod +x data/os/*/mcp_bridge 2>/dev/null || true
+          # Show what we have
+          echo "Bridge binaries:"
+          find data/os/ -type f
+
+      - name: Install Xvfb
+        run: sudo apt-get install -y xvfb
+
+      - name: Run Java tests
+        run: |
+          xvfb-run gradle test -PGHIDRA_INSTALL_DIR=${{ env.GHIDRA_INSTALL_DIR }}
+
+      - name: Build extension
+        run: |
+          gradle buildExtension -PGHIDRA_INSTALL_DIR=${{ env.GHIDRA_INSTALL_DIR }}
+
+      - name: Upload extension ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: GhidraMCP-${{ env.GHIDRA_VERSION }}
+          path: dist/*.zip
+          retention-days: 30
+
+  # Job 3: Auto-tag after a version bump PR merges to main
+  # When you approve + merge the bot's "Bump Ghidra version" PR, this
+  # creates the v* tag automatically so you don't have to do it manually.
+  auto-tag:
+    name: Auto-Tag Version Bump
+    runs-on: ubuntu-latest
+    needs: [build-extension, read-version]
+    if: github.ref == 'refs/heads/master'
+    env:
+      GHIDRA_VERSION: ${{ needs.read-version.outputs.ghidra_version }}
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if this is a version bump commit
+        id: check
+        run: |
+          LAST_MSG=$(git log -1 --format="%s")
+          VERSION="${{ env.GHIDRA_VERSION }}"
+
+          # Check if tag already exists
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "should_tag=false" >> $GITHUB_OUTPUT
+            echo "Tag v$VERSION already exists — skipping"
+          elif echo "$LAST_MSG" | grep -q "Bump Ghidra version to"; then
+            echo "should_tag=true" >> $GITHUB_OUTPUT
+            echo "Version bump detected — will tag v$VERSION"
+          else
+            echo "should_tag=false" >> $GITHUB_OUTPUT
+            echo "Not a version bump commit — skipping"
+          fi
+
+      - name: Create and push tag
+        if: steps.check.outputs.should_tag == 'true'
+        run: |
+          VERSION="${{ env.GHIDRA_VERSION }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+
+          echo "Pushed tag v$VERSION — release job will trigger next"
+
+  # Job 4: Create a GitHub release on tag push
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-extension, read-version]
+    if: startsWith(github.ref, 'refs/tags/v')
+    env:
+      GHIDRA_VERSION: ${{ needs.read-version.outputs.ghidra_version }}
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download extension artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: GhidraMCP-${{ env.GHIDRA_VERSION }}
+          path: dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: false

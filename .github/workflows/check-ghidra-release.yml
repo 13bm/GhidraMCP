@@ -1,0 +1,201 @@
+name: Check for New Ghidra Release
+
+# Runs daily at 08:00 UTC — checks if Ghidra has a newer release than what
+# we track in extension.properties. If a new version is found:
+#
+# Flow:
+#   1. This workflow detects new Ghidra version → opens PR
+#   2. GitHub App approves the PR (satisfies 1-approval requirement)
+#   3. build.yml runs on the PR → Go tests, Java tests, integration tests
+#   4. Tests PASS → PR auto-merges → auto-tag → release
+#   5. Tests FAIL → PR stays open for you to investigate
+#
+# Requires repo secrets: APP_ID, APP_PRIVATE_KEY (from a GitHub App with
+# Pull requests: Read & Write and Contents: Read & Write permissions)
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # daily at 08:00 UTC
+  workflow_dispatch:        # allow manual trigger from GitHub UI
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-and-update:
+    name: Check Ghidra Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get current version from extension.properties
+        id: current
+        run: |
+          CURRENT=$(grep '^version=' extension.properties | cut -d'=' -f2)
+          echo "version=$CURRENT" >> $GITHUB_OUTPUT
+          echo "Current GhidraMCP version: $CURRENT"
+
+      - name: Get latest Ghidra release version
+        id: latest
+        run: |
+          # Query the GitHub API for the latest non-prerelease Ghidra release
+          # Release tags look like: Ghidra_12.0.3_build
+          LATEST_TAG=$(curl -sL \
+            "https://api.github.com/repos/NationalSecurityAgency/ghidra/releases" \
+            | jq -r '[.[] | select(.prerelease == false and (.tag_name | test("^Ghidra_")))][0].tag_name')
+
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
+            echo "ERROR: Could not determine latest Ghidra release"
+            exit 1
+          fi
+
+          # Extract version number: "Ghidra_12.0.3_build" → "12.0.3"
+          LATEST_VERSION=$(echo "$LATEST_TAG" | sed -E 's/^Ghidra_(.*)_build$/\1/')
+          echo "version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest Ghidra version: $LATEST_VERSION (tag: $LATEST_TAG)"
+
+      - name: Compare versions
+        id: compare
+        run: |
+          CURRENT="${{ steps.current.outputs.version }}"
+          LATEST="${{ steps.latest.outputs.version }}"
+
+          if [ "$CURRENT" = "$LATEST" ]; then
+            echo "needs_update=false" >> $GITHUB_OUTPUT
+            echo "Already up to date — GhidraMCP $CURRENT matches Ghidra $LATEST"
+          else
+            echo "needs_update=true" >> $GITHUB_OUTPUT
+            echo "Update needed: GhidraMCP $CURRENT → Ghidra $LATEST"
+          fi
+
+      # Check if a PR for this version already exists (avoid duplicates)
+      - name: Check for existing PR
+        if: steps.compare.outputs.needs_update == 'true'
+        id: existing_pr
+        run: |
+          NEW_VERSION="${{ steps.latest.outputs.version }}"
+          BRANCH="ghidra-version-bump/$NEW_VERSION"
+
+          EXISTING=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "PR #$EXISTING already exists for Ghidra $NEW_VERSION — skipping"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Check if this version was already released (tag exists)
+      - name: Check for existing tag
+        if: steps.compare.outputs.needs_update == 'true' && steps.existing_pr.outputs.exists == 'false'
+        id: existing_tag
+        run: |
+          NEW_VERSION="${{ steps.latest.outputs.version }}"
+          if git rev-parse "v$NEW_VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag v$NEW_VERSION already exists — skipping"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Validate version format
+        if: steps.compare.outputs.needs_update == 'true' && steps.existing_pr.outputs.exists == 'false' && steps.existing_tag.outputs.exists == 'false'
+        run: |
+          NEW_VERSION="${{ steps.latest.outputs.version }}"
+          if ! echo "$NEW_VERSION" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
+            echo "ERROR: Parsed version has unexpected format: '$NEW_VERSION'"
+            echo "Expected format: X.Y or X.Y.Z (e.g. 12.0.3)"
+            exit 1
+          fi
+          echo "Version format valid: $NEW_VERSION"
+
+      - name: Create branch and bump version
+        if: steps.compare.outputs.needs_update == 'true' && steps.existing_pr.outputs.exists == 'false' && steps.existing_tag.outputs.exists == 'false'
+        run: |
+          NEW_VERSION="${{ steps.latest.outputs.version }}"
+          BRANCH="ghidra-version-bump/$NEW_VERSION"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+
+          # Update extension.properties (single source of truth)
+          sed -i "s/^version=.*/version=$NEW_VERSION/" extension.properties
+
+          git add extension.properties
+          git commit -m "Bump Ghidra version to $NEW_VERSION"
+          git push origin "$BRANCH"
+
+      # Create the PR using GITHUB_TOKEN (the "author")
+      - name: Open pull request
+        if: steps.compare.outputs.needs_update == 'true' && steps.existing_pr.outputs.exists == 'false' && steps.existing_tag.outputs.exists == 'false'
+        id: create_pr
+        run: |
+          NEW_VERSION="${{ steps.latest.outputs.version }}"
+          OLD_VERSION="${{ steps.current.outputs.version }}"
+          GHIDRA_TAG="${{ steps.latest.outputs.tag }}"
+          BRANCH="ghidra-version-bump/$NEW_VERSION"
+
+          PR_URL=$(gh pr create \
+            --head "$BRANCH" \
+            --title "Bump Ghidra version: $OLD_VERSION → $NEW_VERSION" \
+            --body "$(cat <<EOF
+          ## Ghidra $NEW_VERSION Released
+
+          A new Ghidra version has been detected: **$OLD_VERSION → $NEW_VERSION**
+
+          [Ghidra Release: $GHIDRA_TAG](https://github.com/NationalSecurityAgency/ghidra/releases/tag/$GHIDRA_TAG)
+
+          ### What this PR does
+          - Updates \`extension.properties\` version to \`$NEW_VERSION\`
+          - The build workflow will compile and test the extension against Ghidra $NEW_VERSION
+
+          ### Automated flow
+          - GitHub App approves this PR (satisfies 1-approval requirement)
+          - If all tests pass, this PR will auto-merge and release automatically
+          - If tests fail, this PR stays open for manual investigation
+
+          ### Ghidra release notes
+          Review for API changes: [Ghidra $GHIDRA_TAG](https://github.com/NationalSecurityAgency/ghidra/releases/tag/$GHIDRA_TAG)
+          EOF
+          )")
+
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "Created PR: $PR_URL"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Generate a token from the GitHub App (separate identity from the PR author)
+      - name: Generate GitHub App token
+        if: steps.create_pr.outputs.pr_url != ''
+        id: app_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      # Approve the PR using the App token (different identity = valid approval)
+      - name: Approve PR via GitHub App
+        if: steps.create_pr.outputs.pr_url != ''
+        run: |
+          gh pr review "${{ steps.create_pr.outputs.pr_url }}" --approve \
+            --body "Automated approval: version bump from Ghidra release detection."
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+
+      # Enable auto-merge — will merge once status checks pass
+      - name: Enable auto-merge
+        if: steps.create_pr.outputs.pr_url != ''
+        run: |
+          gh pr merge "${{ steps.create_pr.outputs.pr_url }}" --auto --squash
+          echo "Auto-merge enabled — PR will merge when CI passes"
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}

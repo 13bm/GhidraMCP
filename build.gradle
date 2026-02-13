@@ -31,13 +31,31 @@ else {
 }
 //----------------------END "DO NOT MODIFY" SECTION-------------------------------
 
+// Ghidra 12.0.3+ requires Java 21
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
 // Add dependencies
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'com.google.code.gson:gson:2.13.1'
+
+    // Test dependencies
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.hamcrest:hamcrest:3.0'
+
+    // Ghidra test framework and runtime JARs (processors, languages, etc.)
+    testRuntimeOnly fileTree(dir: ghidraInstallDir + '/Ghidra/patch', include: '**/*.jar')
+    testRuntimeOnly fileTree(dir: ghidraInstallDir + '/Ghidra/Configurations', include: '**/*.jar')
+    testRuntimeOnly fileTree(dir: ghidraInstallDir + '/Ghidra/Features', include: '**/*.jar')
+    testRuntimeOnly fileTree(dir: ghidraInstallDir + '/Ghidra/Framework', include: '**/*.jar')
+    testRuntimeOnly fileTree(dir: ghidraInstallDir + '/Ghidra/Processors', include: '**/*.jar')
+    testRuntimeOnly fileTree(dir: ghidraInstallDir + '/Ghidra/Debug', include: '**/*.jar')
 }
 
 // Configure the extension build
@@ -51,6 +69,26 @@ buildExtension {
     exclude '*.zip'
     exclude '.gradle'
     exclude '*.py'
+    exclude '*.log'
+    exclude 'mcp-bridge'    // Go source — only compiled binaries go in data/os/
+    exclude '__pycache__'
+}
+
+// Test configuration — JVM args required for Ghidra's integration test framework (JDK 21+)
+test {
+    jvmArgs '--add-opens=java.base/java.lang=ALL-UNNAMED'
+    jvmArgs '--add-opens=java.base/java.util=ALL-UNNAMED'
+    jvmArgs '--add-opens=java.base/java.io=ALL-UNNAMED'
+    jvmArgs '--add-opens=java.base/java.lang.reflect=ALL-UNNAMED'
+    jvmArgs '--add-opens=java.base/java.text=ALL-UNNAMED'
+    jvmArgs '--add-opens=java.desktop/java.awt=ALL-UNNAMED'
+    jvmArgs '--add-opens=java.desktop/java.awt.event=ALL-UNNAMED'
+    jvmArgs '--add-opens=java.desktop/javax.swing=ALL-UNNAMED'
+    jvmArgs '--add-opens=java.desktop/javax.swing.text=ALL-UNNAMED'
+    jvmArgs '--add-opens=java.desktop/sun.awt=ALL-UNNAMED'
+    jvmArgs '--add-opens=java.desktop/sun.java2d=ALL-UNNAMED'
+    minHeapSize = '512m'
+    maxHeapSize = '2048m'
 }
 
 // Add Javadoc for extension
