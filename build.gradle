@@ -89,6 +89,14 @@ test {
     jvmArgs '--add-opens=java.desktop/sun.java2d=ALL-UNNAMED'
     minHeapSize = '512m'
     maxHeapSize = '2048m'
+
+    // Exclude Ghidra integration tests by default — they require a full Ghidra
+    // dev-build environment (TestEnv, AbstractGhidraHeadedIntegrationTest) which
+    // is not included in the public Ghidra distribution.  Run them locally with:
+    //   gradle test -PincludeIntegrationTests
+    if (!project.hasProperty('includeIntegrationTests')) {
+        exclude '**/MCPServerIntegrationTest*'
+    }
 }
 
 // Add Javadoc for extension

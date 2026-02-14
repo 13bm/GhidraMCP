@@ -115,11 +115,9 @@ jobs:
 
       - name: Download Ghidra
         run: |
-          # Use the GitHub API to find the actual release asset URL for the target version
           RELEASE_TAG="Ghidra_${GHIDRA_VERSION}_build"
           echo "Looking for Ghidra release: $RELEASE_TAG"
 
-          # Get the release metadata including the download URL and checksum file
           RELEASE_JSON=$(curl -sL \
             "https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/tags/${RELEASE_TAG}")
 
@@ -133,7 +131,6 @@ jobs:
             exit 1
           fi
 
-          # Check for a SHA-256 checksum file in the release assets
           SHA256_URL=$(echo "$RELEASE_JSON" \
             | jq -r '.assets[] | select(.name | test("sha256")) | .browser_download_url' \
             | head -1)
@@ -141,7 +138,6 @@ jobs:
           echo "Downloading: $ASSET_URL"
           wget -q "$ASSET_URL" -O ghidra.zip
 
-          # Verify checksum if available
           if [ -n "$SHA256_URL" ] && [ "$SHA256_URL" != "null" ]; then
             echo "Verifying SHA-256 checksum..."
             wget -q "$SHA256_URL" -O ghidra.sha256
