@@ -232,7 +232,7 @@ jobs:
           if git rev-parse "v$VERSION" >/dev/null 2>&1; then
             echo "should_tag=false" >> $GITHUB_OUTPUT
             echo "Tag v$VERSION already exists — skipping"
-          elif echo "$LAST_MSG" | grep -q "Bump Ghidra version to"; then
+          elif echo "$LAST_MSG" | grep -qi "Bump Ghidra version"; then
             echo "should_tag=true" >> $GITHUB_OUTPUT
             echo "Version bump detected — will tag v$VERSION"
           else

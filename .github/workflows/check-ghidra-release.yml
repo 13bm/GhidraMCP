@@ -182,14 +182,14 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
 
-      # Approve the PR using the App token (different identity = valid approval)
-      - name: Approve PR via GitHub App
+      # Approve using GITHUB_TOKEN (different identity from the App that created the PR)
+      - name: Approve PR
         if: steps.create_pr.outputs.pr_url != ''
         run: |
           gh pr review "${{ steps.create_pr.outputs.pr_url }}" --approve \
             --body "Automated approval: version bump from Ghidra release detection."
         env:
-          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Enable auto-merge — will merge once status checks pass
       - name: Enable auto-merge
