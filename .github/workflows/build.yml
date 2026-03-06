@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ghidra_version: ${{ steps.version.outputs.ghidra_version }}
+      project_version: ${{ steps.version.outputs.project_version }}
+      release_version: ${{ steps.version.outputs.release_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,8 +27,14 @@ jobs:
         id: version
         run: |
           VERSION=$(grep '^version=' extension.properties | cut -d'=' -f2)
+          PROJECT_VERSION=$(grep '^project_version=' extension.properties | cut -d'=' -f2)
+          RELEASE_VERSION="${PROJECT_VERSION}+ghidra${VERSION}"
           echo "ghidra_version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Ghidra version from extension.properties: $VERSION"
+          echo "project_version=$PROJECT_VERSION" >> $GITHUB_OUTPUT
+          echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
+          echo "Ghidra version: $VERSION"
+          echo "Project version: $PROJECT_VERSION"
+          echo "Release version: $RELEASE_VERSION"
 
   # Job 1: Cross-compile the Go bridge for all platforms
   build-bridge:
@@ -212,6 +220,7 @@ jobs:
     if: github.ref == 'refs/heads/master'
     env:
       GHIDRA_VERSION: ${{ needs.read-version.outputs.ghidra_version }}
+      RELEASE_VERSION: ${{ needs.read-version.outputs.release_version }}
 
     permissions:
       contents: write
@@ -226,15 +235,15 @@ jobs:
         id: check
         run: |
           LAST_MSG=$(git log -1 --format="%s")
-          VERSION="${{ env.GHIDRA_VERSION }}"
+          TAG="v${{ env.RELEASE_VERSION }}"
 
           # Check if tag already exists
-          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "should_tag=false" >> $GITHUB_OUTPUT
-            echo "Tag v$VERSION already exists — skipping"
+            echo "Tag $TAG already exists — skipping"
           elif echo "$LAST_MSG" | grep -qi "Bump Ghidra version"; then
             echo "should_tag=true" >> $GITHUB_OUTPUT
-            echo "Version bump detected — will tag v$VERSION"
+            echo "Version bump detected — will tag $TAG"
           else
             echo "should_tag=false" >> $GITHUB_OUTPUT
             echo "Not a version bump commit — skipping"
@@ -243,15 +252,15 @@ jobs:
       - name: Create and push tag
         if: steps.check.outputs.should_tag == 'true'
         run: |
-          VERSION="${{ env.GHIDRA_VERSION }}"
+          TAG="v${{ env.RELEASE_VERSION }}"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git tag "v$VERSION"
-          git push origin "v$VERSION"
+          git tag "$TAG"
+          git push origin "$TAG"
 
-          echo "Pushed tag v$VERSION — release job will trigger next"
+          echo "Pushed tag $TAG — release job will trigger next"
 
   # Job 4: Create a GitHub release on tag push
   release:
@@ -261,6 +270,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     env:
       GHIDRA_VERSION: ${{ needs.read-version.outputs.ghidra_version }}
+      RELEASE_VERSION: ${{ needs.read-version.outputs.release_version }}
 
     permissions:
       contents: write
@@ -275,7 +285,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: GhidraMCP v${{ env.RELEASE_VERSION }}
           files: dist/*.zip
+          body: |
+            Compatible with **Ghidra ${{ env.GHIDRA_VERSION }}**
           generate_release_notes: true
           draft: false
           prerelease: false
