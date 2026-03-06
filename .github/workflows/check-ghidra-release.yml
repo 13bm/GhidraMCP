@@ -143,7 +143,7 @@ jobs:
           git commit -m "Bump Ghidra version to $NEW_VERSION"
           git push origin "$BRANCH"
 
-      # Create the PR using GITHUB_TOKEN (the "author")
+      # Create the PR using the App token (so the pull_request event triggers CI)
       - name: Open pull request
         if: steps.compare.outputs.needs_update == 'true' && steps.existing_pr.outputs.exists == 'false' && steps.existing_tag.outputs.exists == 'false'
         id: create_pr
@@ -180,7 +180,7 @@ jobs:
           echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
           echo "Created PR: $PR_URL"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
 
       # Approve the PR using the App token (different identity = valid approval)
       - name: Approve PR via GitHub App
