@@ -1,4 +1,5 @@
 # GhidraMCP
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/13bm/GhidraMCP)](https://archestra.ai/mcp-catalog/13bm__ghidramcp)
 
 [![Build](https://github.com/13bm/GhidraMCP/actions/workflows/build.yml/badge.svg)](https://github.com/13bm/GhidraMCP/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
