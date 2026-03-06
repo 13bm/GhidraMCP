@@ -28,10 +28,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Generate App token early so it can be used for git push (pushes via
+      # GITHUB_TOKEN don't trigger other workflows; App token pushes do).
+      - name: Generate GitHub App token
+        id: app_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app_token.outputs.token }}
 
       - name: Get current version from extension.properties
         id: current
@@ -172,15 +181,6 @@ jobs:
           echo "Created PR: $PR_URL"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Generate a token from the GitHub App (separate identity from the PR author)
-      - name: Generate GitHub App token
-        if: steps.create_pr.outputs.pr_url != ''
-        id: app_token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       # Approve the PR using the App token (different identity = valid approval)
       - name: Approve PR via GitHub App
