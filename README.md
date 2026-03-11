@@ -2,6 +2,7 @@
 
 [![Build](https://github.com/13bm/GhidraMCP/actions/workflows/build.yml/badge.svg)](https://github.com/13bm/GhidraMCP/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![MCPAmpel](https://img.shields.io/endpoint?url=https://mcpampel.com/badge/13bm/ghidramcp.json)](https://mcpampel.com/repo/13bm/ghidramcp)
 
 A Ghidra extension that exposes 69 reverse-engineering tools to AI assistants through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). Open a binary in Ghidra, enable the plugin, and let Claude (or any MCP client) decompile functions, rename symbols, annotate code, search for vulnerabilities, and more.
 
