@@ -32,6 +32,7 @@ import ghidra.program.model.symbol.SymbolTable;
 import ghidra.program.model.symbol.SymbolIterator;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.Namespace;
+import ghidra.program.model.symbol.SymbolType;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.program.model.lang.PrototypeModel;
@@ -2065,6 +2066,125 @@ public Map<String, Object> extractApiCallSequences(String functionAddress) {
             result.put("error", e.getMessage());
             Msg.error(this, "Error listing namespaces: " + e.getMessage());
         }
+        return result;
+    }
+
+    public Map<String, Object> setNamespace(String address, String namespaceName, String type, String structureName) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", false);
+
+        if (currentProgram == null) {
+            result.put("error", "No program loaded");
+            return result;
+        }
+
+        if (namespaceName == null || namespaceName.trim().isEmpty()) {
+            result.put("error", "Namespace name cannot be empty");
+            return result;
+        }
+
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                int txId = currentProgram.startTransaction("Set Namespace");
+                try {
+                    Address addr = currentProgram.getAddressFactory().getAddress(address);
+                    if (addr == null) {
+                        result.put("error", "Invalid address: " + address);
+                        return;
+                    }
+
+                    // Find the function at the address
+                    FunctionManager functionManager = currentProgram.getFunctionManager();
+                    Function targetFunction = functionManager.getFunctionAt(addr);
+                    if (targetFunction == null) {
+                        result.put("error", "No function found at address " + address);
+                        return;
+                    }
+
+                    SymbolTable symbolTable = currentProgram.getSymbolTable();
+                    String oldNamespace = targetFunction.getParentNamespace().getName(true);
+
+                    // Parse :: for nested namespaces (e.g. "Outer::Inner")
+                    String[] parts = namespaceName.split("::");
+                    Namespace parent = currentProgram.getGlobalNamespace();
+
+                    for (String part : parts) {
+                        part = part.trim();
+                        if (part.isEmpty()) {
+                            result.put("error", "Namespace name contains empty segment");
+                            return;
+                        }
+
+                        // Check if this level already exists
+                        Namespace existing = symbolTable.getNamespace(part, parent);
+                        if (existing != null) {
+                            parent = existing;
+                        } else {
+                            // Create based on type
+                            if ("class".equalsIgnoreCase(type)) {
+                                parent = symbolTable.createClass(parent, part, SourceType.USER_DEFINED);
+                            } else if ("library".equalsIgnoreCase(type)) {
+                                parent = symbolTable.createExternalLibrary(part, SourceType.USER_DEFINED);
+                            } else {
+                                parent = symbolTable.createNameSpace(parent, part, SourceType.USER_DEFINED);
+                            }
+                        }
+                    }
+
+                    // Move the function into the namespace
+                    targetFunction.setParentNamespace(parent);
+
+                    // Associate a structure with the class if requested
+                    if (structureName != null && !structureName.trim().isEmpty()) {
+                        DataTypeManager dtm = currentProgram.getDataTypeManager();
+                        // Find the existing structure
+                        DataType dt = null;
+                        Iterator<DataType> dtIter = dtm.getAllDataTypes();
+                        while (dtIter.hasNext()) {
+                            DataType candidate = dtIter.next();
+                            if (candidate instanceof Structure && candidate.getName().equals(structureName)) {
+                                dt = candidate;
+                                break;
+                            }
+                        }
+                        if (dt != null) {
+                            // Move/copy structure to category path matching the namespace
+                            CategoryPath targetPath = new CategoryPath("/" + namespaceName.replace("::", "/"));
+                            dtm.createCategory(targetPath);
+                            dt.setCategoryPath(targetPath);
+                            result.put("structureMoved", structureName);
+                            result.put("structurePath", targetPath.getPath());
+                        } else {
+                            result.put("structureWarning", "Structure '" + structureName + "' not found");
+                        }
+                    }
+
+                    result.put("success", true);
+                    result.put("address", address);
+                    result.put("function", targetFunction.getName());
+                    result.put("oldNamespace", oldNamespace);
+                    result.put("newNamespace", parent.getName(true));
+                    result.put("type", parent.getSymbol().getSymbolType().toString());
+
+                    Msg.info(this, "Moved function '" + targetFunction.getName() +
+                            "' from namespace '" + oldNamespace + "' to '" + parent.getName(true) + "'");
+
+                } catch (DuplicateNameException e) {
+                    result.put("error", "Duplicate name: " + e.getMessage());
+                } catch (InvalidInputException e) {
+                    result.put("error", "Invalid input: " + e.getMessage());
+                } catch (Exception e) {
+                    result.put("error", "Error setting namespace: " + e.getMessage());
+                    Msg.error(this, "Error setting namespace: " + e.getMessage());
+                } finally {
+                    currentProgram.endTransaction(txId, Boolean.TRUE.equals(result.get("success")));
+                }
+            });
+        } catch (InterruptedException | InvocationTargetException e) {
+            result.put("error", "Error executing on Swing thread: " + e.getMessage());
+            Msg.error(this, "Error executing on Swing thread: " + e.getMessage());
+        }
+
         return result;
     }
 

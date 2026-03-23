@@ -1,6 +1,6 @@
 # GhidraMCP Tool Reference
 
-Complete reference for all 69 MCP tools exposed by GhidraMCP. Each tool can be called by any MCP-compatible client (Claude Desktop, Claude Code, etc.).
+Complete reference for all 70 MCP tools exposed by GhidraMCP. Each tool can be called by any MCP-compatible client (Claude Desktop, Claude Code, etc.).
 
 ## Global Parameters
 
@@ -488,6 +488,19 @@ Apply a data type at the given address. Changes how Ghidra interprets the bytes 
 |-----------|------|----------|-------------|
 | `address` | string | **Yes** | Address where the type should be applied |
 | `type_name` | string | **Yes** | Name of the data type to apply |
+
+---
+
+### `set_namespace`
+
+Set the namespace or class for a function. Creates the namespace hierarchy if it doesn't exist. Use `::` for nested namespaces. Use type `class` for C++/Java/C# classes (enables `__thiscall` in decompiler), `namespace` for generic namespaces, or `library` for external libraries.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `address` | string | **Yes** | Address of the function to move |
+| `namespace` | string | **Yes** | Namespace name (use `::` for nesting, e.g. `MyClass` or `Outer::Inner`) |
+| `type` | string | No | Type of namespace: `namespace` (default), `class`, or `library` |
+| `structure` | string | No | Name of an existing structure to associate with the class (moves it to the class category path) |
 
 ---
 

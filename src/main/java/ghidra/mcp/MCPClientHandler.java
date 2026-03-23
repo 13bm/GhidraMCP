@@ -514,6 +514,16 @@ public class MCPClientHandler implements Runnable {
                 break;
             }
 
+            case "setNamespace": {
+                String address = getRequiredStringParam(params, "address");
+                String namespace = getRequiredStringParam(params, "namespace");
+                String type = params.has("type") ? params.get("type").getAsString() : "namespace";
+                String structure = params.has("structure") ? params.get("structure").getAsString() : null;
+                Map<String, Object> nsResult = contextProvider.setNamespace(address, namespace, type, structure);
+                response.add("result", GSON.toJsonTree(nsResult));
+                break;
+            }
+
             case "listDataItems": {
                 int offset = getClampedIntParam(params, "offset", 0, 0, Integer.MAX_VALUE);
                 int limit = getClampedIntParam(params, "limit", 100, 1, MAX_LIMIT);

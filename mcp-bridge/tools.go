@@ -209,7 +209,7 @@ func buildHandler(t toolDef) server.ToolHandlerFunc {
 }
 
 // ---------------------------------------------------------------------------
-// Tool definitions (69 tools)
+// Tool definitions (70 tools)
 // ---------------------------------------------------------------------------
 
 var allTools = []toolDef{
@@ -368,6 +368,14 @@ var allTools = []toolDef{
 		Params: []paramDef{
 			{MCPName: "address", Desc: "Address where the type should be applied", Type: paramString, Required: true},
 			{MCPName: "type_name", RPCName: "typeName", Desc: "Name of the data type to apply", Type: paramString, Required: true},
+		},
+	},
+	{Name: "set_namespace", Desc: "Set the namespace or class for a function. Creates the namespace hierarchy if it doesn't exist. Use '::' for nested namespaces (e.g. 'Outer::Inner'). Use type 'class' for C++/Java/C# classes (enables __thiscall), 'namespace' for generic namespaces, or 'library' for external libraries. Optionally associate an existing structure with the class.", Title: "Set Namespace", Method: "setNamespace",
+		Params: []paramDef{
+			{MCPName: "address", Desc: "Address of the function to move", Type: paramString, Required: true},
+			{MCPName: "namespace", Desc: "Namespace name (use '::' for nesting, e.g. 'MyClass' or 'Outer::Inner')", Type: paramString, Required: true},
+			{MCPName: "type", Desc: "Type of namespace: 'namespace' (default), 'class', or 'library'", Type: paramString},
+			{MCPName: "structure", Desc: "Name of an existing structure to associate with the class (moves it to the class category path)", Type: paramString},
 		},
 	},
 	{Name: "set_calling_convention", Desc: "Set the calling convention for a function (e.g. '__stdcall', '__cdecl', '__fastcall', '__thiscall').", Title: "Set Convention", Method: "setCallingConvention",

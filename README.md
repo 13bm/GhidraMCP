@@ -3,7 +3,7 @@
 [![Build](https://github.com/13bm/GhidraMCP/actions/workflows/build.yml/badge.svg)](https://github.com/13bm/GhidraMCP/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-A Ghidra extension that exposes 69 reverse-engineering tools to AI assistants through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). Open a binary in Ghidra, enable the plugin, and let Claude (or any MCP client) decompile functions, rename symbols, annotate code, search for vulnerabilities, and more.
+A Ghidra extension that exposes 70 reverse-engineering tools to AI assistants through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). Open a binary in Ghidra, enable the plugin, and let Claude (or any MCP client) decompile functions, rename symbols, annotate code, search for vulnerabilities, and more.
 
 ## Architecture
 
@@ -24,7 +24,7 @@ The **Ghidra plugin** (Java) starts a TCP server inside Ghidra and auto-launches
 
 ## Features
 
-- **69 MCP tools** spanning query, mutation, analysis, malware triage, IoT/embedded security, structure management, async decompilation, and multi-instance support
+- **70 MCP tools** spanning query, mutation, analysis, malware triage, IoT/embedded security, structure management, async decompilation, and multi-instance support
 - **Easy setup** -- plugin auto-starts the bridge; use **MCP > Settings > Write to Claude Config** to configure your MCP client
 - **Cross-platform** -- prebuilt bridge binaries for Linux x86_64, Windows x86_64, macOS x86_64 and macOS ARM64
 - **Configurable** -- port, localhost-only binding, API-key auth, auto-start, bridge enable/disable via `GhidraMCP.properties`
@@ -134,6 +134,7 @@ The tables below give a quick overview. See [TOOLS.md](TOOLS.md) for detailed pa
 | `create_structure` | Create a structure data type |
 | `create_enum` | Create an enum data type |
 | `apply_data_type` | Apply a data type at an address |
+| `set_namespace` | Set namespace or class for a function |
 | `set_calling_convention` | Set calling convention for a function |
 | `set_image_base` | Set the image base address |
 | `set_memory_permissions` | Modify memory block permissions |

@@ -162,8 +162,8 @@ func TestRegisterAllToolsRegistersExpectedToolCount(t *testing.T) {
 	}
 
 	// 61 original tools (numbering skips #4) + 1 list_ghidra_instances +
-	// 5 struct CRUD tools + 2 async decompilation tools = 69.
-	const expectedTools = 69
+	// 5 struct CRUD tools + 2 async decompilation tools + 1 set_namespace = 70.
+	const expectedTools = 70
 	if len(parsed.Result.Tools) != expectedTools {
 		t.Errorf("expected %d tools registered, got %d", expectedTools, len(parsed.Result.Tools))
 	}
@@ -290,7 +290,7 @@ func TestDataDrivenJSONParseParam(t *testing.T) {
 
 func TestDataDrivenToolCount(t *testing.T) {
 	// Verify the allTools slice matches expected count.
-	const expectedTools = 69
+	const expectedTools = 70
 	if len(allTools) != expectedTools {
 		t.Errorf("expected %d tools in allTools, got %d", expectedTools, len(allTools))
 	}
@@ -315,7 +315,7 @@ func TestRegisterAllToolsIdempotent(t *testing.T) {
 	json.Unmarshal(respBytes, &parsed)
 
 	// AddTool uses map keyed by name, so duplicates should not accumulate.
-	const expectedTools = 69
+	const expectedTools = 70
 	if len(parsed.Result.Tools) != expectedTools {
 		t.Errorf("after double registration, expected %d tools, got %d",
 			expectedTools, len(parsed.Result.Tools))
