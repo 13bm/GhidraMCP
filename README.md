@@ -51,7 +51,7 @@ The **Ghidra plugin** (Java) starts a TCP server inside Ghidra and auto-launches
 ### Enable
 
 1. Open a project and a program (binary)
-2. **File > Configure > Miscellaneous** -- check **MCPServerPlugin**
+2. **File > Configure > GhidraMCP -- check MCPServerPlugin**
 3. The plugin auto-starts the TCP server (default `localhost:8765`) and launches the bridge
 
 To configure Claude Desktop, open **MCP > Settings** and click **Write to Claude Config**. For other MCP clients, click **Copy to Clipboard** and add this to your client config:
