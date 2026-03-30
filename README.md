@@ -34,6 +34,10 @@ The **Ghidra plugin** (Java) starts a TCP server inside Ghidra and auto-launches
 - **Pagination** -- large result sets (functions, strings, imports, ...) support `offset`/`limit` for safe incremental retrieval
 - **CI/CD** -- automated builds, Go + Java tests, Ghidra integration tests, and auto-release when a new Ghidra version drops
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/13bm-ghidramcp).
+
 ## Quick Start
 
 ### Prerequisites
